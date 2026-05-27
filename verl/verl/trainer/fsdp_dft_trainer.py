@@ -41,6 +41,7 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM, PreTrainedModel
 
 import verl.utils.hdfs_io as hdfs_io
+from verl.trainer.prift_weights import dft_weights, prift_mass_weights, prift_prob_weights
 from verl.utils.dataset import SFTDataset
 from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 from verl.utils.debug import log_gpu_memory_usage
@@ -102,6 +103,25 @@ class FSDPSFTTrainer:
         if self.config.data.chat_template is not None:
             raise ValueError("Apply Chat template from config is not supported yet.")
 
+        # ---- Token-weighting (PriFT / DFT / SFT) configuration ----
+        # Default to "dft" so existing fsdp_dft_trainer commands keep their behavior.
+        loss_cfg = self.config.get("loss", None)
+        self.loss_method = loss_cfg.get("method", "dft") if loss_cfg is not None else "dft"
+        valid_methods = {"sft", "dft", "prift_prob", "prift_mass"}
+        if self.loss_method not in valid_methods:
+            raise ValueError(f"Unknown loss.method={self.loss_method}, expected one of {valid_methods}")
+        self.mass_threshold = loss_cfg.get("mass_threshold", 0.5) if loss_cfg is not None else 0.5
+        self.mass_vocab_chunk = loss_cfg.get("mass_vocab_chunk", None) if loss_cfg is not None else None
+        self.reference_model_path = loss_cfg.get("reference_model_path", None) if loss_cfg is not None else None
+        self.reference_micro_batch_size = (
+            loss_cfg.get("reference_micro_batch_size", None) if loss_cfg is not None else None
+        )
+        self.use_reference = self.loss_method in ("prift_prob", "prift_mass")
+        # Populated in _build_model_optimizer when a reference is needed.
+        self.reference_model = None
+        if self.device_mesh.get_rank() == 0:
+            print(f"[PriFT] loss.method={self.loss_method}, use_reference={self.use_reference}")
+
         # normalize dp size
         self._normalize_config_bsz()
 
@@ -115,6 +135,9 @@ class FSDPSFTTrainer:
         self._build_dataloader(train_dataset, val_dataset)
         # build model
         self._build_model_optimizer()
+
+        # build the frozen pretrained reference used by PriFT (prift_prob/prift_mass)
+        self._build_reference_model()
 
         # TODO: add checkpoint manager
         if self.device_mesh.get_rank() == 0:
@@ -332,9 +355,126 @@ class FSDPSFTTrainer:
         else:
             raise ValueError(f"Unknown lr scheduler: {self.config.optim.lr_scheduler}")
 
+    def _build_reference_model(self):
+        """Load the frozen pretrained reference model used by PriFT.
+
+        The reference is loaded once, kept in eval mode with gradients disabled, and
+        is *never* added to the optimizer/scheduler nor saved by the checkpointer. It
+        is held as a full (unsharded) bf16 copy on each rank and only ever run under
+        torch.no_grad(); the online FSDP model remains the only trainable model.
+        """
+        if not self.use_reference:
+            return
+
+        ref_path = self.reference_model_path or self.config.model.partial_pretrain
+        local_ref_path = copy_to_local(src=ref_path, verbose=True)
+        if self.device_mesh.get_rank() == 0:
+            print(f"[PriFT] Loading frozen reference model from: {ref_path}")
+
+        trust_remote_code = self.config.model.trust_remote_code
+        ref_config = AutoConfig.from_pretrained(local_ref_path, trust_remote_code=trust_remote_code)
+        if hasattr(ref_config, "max_position_embeddings"):
+            ref_config.max_position_embeddings = max(
+                ref_config.max_position_embeddings, self.config.data.max_length
+            )
+
+        log_gpu_memory_usage("Before reference model allocation", logger=logger)
+        reference_model = AutoModelForCausalLM.from_pretrained(
+            local_ref_path,
+            config=ref_config,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2",
+            trust_remote_code=trust_remote_code,
+        )
+        reference_model = reference_model.to(get_device_id())
+        reference_model.eval()
+        for p in reference_model.parameters():
+            p.requires_grad_(False)
+        self.reference_model = reference_model
+
+        # Sanity check: vocab sizes must match so target tokens index the same space.
+        ref_vocab = getattr(reference_model.config, "vocab_size", None)
+        online_vocab = getattr(self.model.config, "vocab_size", None)
+        if ref_vocab is not None and online_vocab is not None:
+            assert ref_vocab == online_vocab, (
+                f"Reference vocab_size ({ref_vocab}) != online vocab_size ({online_vocab}); "
+                "the reference must share the online model's tokenizer/vocabulary."
+            )
+        log_gpu_memory_usage("After reference model allocation", logger=logger)
+
+    def _token_weights(self, method, shift_logits, shift_labels, ref_logits=None):
+        """Compute detached per-token weights m_t for the weighted-SFT objective.
+
+        All inputs are flattened to (N, ...) where N = batch * (seqlen - 1) and
+        already aligned with the shifted CE targets. The returned weight tensor has
+        shape (N,) and never carries gradients (it only rescales the loss magnitude).
+
+        method:
+          - "sft"        : m_t = 1
+          - "dft"        : m_t = sg(p_online(y_t)), online target probability
+          - "prift_prob" : m_t = p_ref(y_t), frozen-reference target probability
+          - "prift_mass" : m_t = 1[ lower_mass_t + p_ref(y_t) >= tau ]
+        For the prift_* methods, ref_logits (the frozen-reference shifted logits,
+        same shape as shift_logits) must be provided. They are added in later commits.
+        """
+        if method == "sft":
+            ref_dtype = shift_logits.dtype if shift_logits is not None else torch.float32
+            return torch.ones_like(shift_labels, dtype=ref_dtype)
+        if method == "dft":
+            return dft_weights(shift_logits, shift_labels)
+        if method == "prift_prob":
+            assert ref_logits is not None, "prift_prob requires reference logits"
+            return prift_prob_weights(ref_logits, shift_labels)
+        if method == "prift_mass":
+            assert ref_logits is not None, "prift_mass requires reference logits"
+            return prift_mass_weights(
+                ref_logits, shift_labels, threshold=self.mass_threshold, vocab_chunk=self.mass_vocab_chunk
+            )
+        raise NotImplementedError(f"Token weights for method={method} are not implemented")
+
+    def _reference_weights(self, input_ids, attention_mask, position_ids):
+        """Run the frozen reference forward on the current batch and return detached
+        per-token weights aligned with the flattened shifted CE targets, shape (N,).
+
+        The reference is run under torch.no_grad(), optionally micro-batched over the
+        sequence dimension (loss.reference_micro_batch_size) to bound peak memory, and
+        its logits are freed as soon as the scalar per-token weight is computed.
+        """
+        assert self.reference_model is not None, "reference model has not been built"
+        bsz, _ = input_ids.shape
+        targets = input_ids[:, 1:]  # (B, T-1), same shift as the online CE targets
+        chunk = self.reference_micro_batch_size or bsz
+        chunk = max(1, int(chunk))
+
+        weights_chunks = []
+        for s in range(0, bsz, chunk):
+            e = min(s + chunk, bsz)
+            with torch.no_grad():
+                ref_out = self.reference_model(
+                    input_ids=input_ids[s:e],
+                    attention_mask=attention_mask[s:e],
+                    position_ids=position_ids[s:e],
+                    use_cache=False,
+                )
+                ref_logits = ref_out.logits[:, :-1, :]  # (b, T-1, V)
+                b, tm1, vocab = ref_logits.shape
+                flat_ref = ref_logits.reshape(-1, vocab)
+                flat_tgt = targets[s:e].reshape(-1).to(flat_ref.device)
+                w = self._token_weights(self.loss_method, None, flat_tgt, ref_logits=flat_ref)
+                weights_chunks.append(w.reshape(b, tm1))
+            # Free the full-vocab reference logits before the next chunk.
+            del ref_out, ref_logits, flat_ref
+        weights = torch.cat(weights_chunks, dim=0)  # (B, T-1)
+        return weights.reshape(-1).detach()
+
     def _compute_loss_and_backward(self, batch, do_backward=True):
         """Compute loss with optional sequence parallelism and remove padding features"""
         use_sp = self.use_remove_padding and self.config.ulysses_sequence_parallel_size > 1
+        if use_sp and self.loss_method not in ("sft", "dft"):
+            raise NotImplementedError(
+                f"loss.method={self.loss_method} is only supported without sequence parallelism "
+                "(set ulysses_sequence_parallel_size=1)."
+            )
 
         # Move inputs to GPU and prepare loss mask
         input_ids = batch["input_ids"].to(self.device_name)
@@ -361,14 +501,30 @@ class FSDPSFTTrainer:
                 shift_labels = shift_labels.view(-1)
                 # Enable model parallelism
                 shift_labels = shift_labels.to(shift_logits.device)
-                
+
+                # Shifted-label / loss-mask alignment checks: loss_mask was sliced as
+                # loss_mask[:, :-1] (drop the position aligned with the last, unpredicted
+                # token) and flattened, so it must line up 1:1 with the shifted targets.
+                assert shift_labels.shape == loss_mask.shape, (
+                    f"shift_labels {tuple(shift_labels.shape)} and loss_mask "
+                    f"{tuple(loss_mask.shape)} must be aligned per-token"
+                )
+                assert shift_logits.shape[0] == shift_labels.shape[0], (
+                    f"shift_logits rows {shift_logits.shape[0]} != shift_labels "
+                    f"{shift_labels.shape[0]}"
+                )
 
                 loss = loss_fct(shift_logits, shift_labels)
                 original_loss = loss.clone()
 
-                probs = torch.softmax(shift_logits, dim=-1)
-                prob_coefficients = probs.gather(1, shift_labels.unsqueeze(-1)).squeeze(-1)
-                loss = loss * prob_coefficients.detach()
+                # PriFT methods derive token weights from a frozen reference forward on
+                # the SAME input ids / attention mask / position ids; sft and dft use the
+                # online logits directly. Only the online model receives gradients.
+                if self.use_reference:
+                    token_weights = self._reference_weights(input_ids, attention_mask, position_ids)
+                else:
+                    token_weights = self._token_weights(self.loss_method, shift_logits, shift_labels)
+                loss = loss * token_weights.to(loss.device)
                 loss = loss * loss_mask.to(loss.device)
                 original_loss = original_loss * loss_mask.to(original_loss.device)
             else:
@@ -423,7 +579,9 @@ class FSDPSFTTrainer:
                 full_loss = full_loss.squeeze(-1)[:, :-1]  # Remove last token's loss
                 full_loss = full_loss.reshape(-1)
                 loss_mask = loss_mask.to(full_loss.device)
+                # Sequence-parallel path only supports unweighted CE (sft) here.
                 loss = full_loss * loss_mask
+                original_loss = loss.clone()
 
             valid_token_this_rank = torch.sum(loss_mask)
 

@@ -47,6 +47,27 @@ optim:
   warmup_steps_ratio: 0.1
   clip_grad: 1.0
   lr_scheduler: cosine
+loss:
+  # Token-weighting rule. One of {sft, dft, prift_prob, prift_mass}.
+  #   sft         : standard token CE (m_t = 1)
+  #   dft         : CE weighted by detached online target prob (m_t = sg(p_online(y_t)))
+  #   prift_prob  : CE weighted by frozen-reference target prob (m_t = p_ref(y_t))
+  #   prift_mass  : CE on tokens whose reference score
+  #                 lower_mass_t + p_ref(y_t) >= mass_threshold, where
+  #                 lower_mass_t = sum_v p_ref(v) * 1[p_ref(v) < p_ref(y_t)]
+  method: dft
+  # Path to the frozen pretrained reference model used by prift_*.
+  # When null, defaults to model.partial_pretrain (the model's own pre-SFT checkpoint).
+  reference_model_path: null
+  # Selection threshold tau for prift_mass.
+  mass_threshold: 0.5
+  # Optional vocab-dim chunk size for the prift_mass lower-mass computation.
+  # null computes over the full vocabulary at once; set a smaller value to bound
+  # peak memory of the full-vocab softmax path.
+  mass_vocab_chunk: null
+  # Optional micro-batch size (in sequences) for the reference forward pass.
+  # null means use the same micro batch as the online model.
+  reference_micro_batch_size: null
 ulysses_sequence_parallel_size: 1
 use_remove_padding: False
 trainer:
