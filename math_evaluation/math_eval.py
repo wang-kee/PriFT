@@ -212,8 +212,28 @@ def setup(args):
     results.append(
         {
             "acc": sum([result["acc"] for result in results]) / len(results),
+            "avg_acc": round(sum([r.get("avg_acc", r["acc"]) for r in results]) / len(results), 2),
+            "pass_acc": round(sum([r.get("pass_acc", 0.0) for r in results]) / len(results), 2),
         }
     )
+
+    # Final summary reporting both Avg@k and Pass@k for every dataset.
+    n_sampling = args.n_sampling
+    print("\n" + "=" * 60)
+    print(f"Evaluation summary (n_sampling={n_sampling})")
+    print(f"{'dataset':<20}{'Avg@' + str(n_sampling):<12}{'Pass@' + str(n_sampling):<12}")
+    print("-" * 60)
+    summary = {}
+    for data_name, result in zip(data_list, results):
+        avg = result.get("avg_acc", result.get("acc"))
+        passk = result.get("pass_acc", None)
+        passk_str = "-" if passk is None else f"{passk}"
+        print(f"{data_name:<20}{avg:<12}{passk_str:<12}")
+        summary[data_name] = {f"avg@{n_sampling}": avg, f"pass@{n_sampling}": passk}
+    print("=" * 60)
+    with open(os.path.join(args.output_dir, "summary_metrics.json"), "w") as f:
+        json.dump(summary, f, indent=4)
+    print(f"Saved summary to {os.path.join(args.output_dir, 'summary_metrics.json')}")
 
 
 def is_multi_choice(answer):

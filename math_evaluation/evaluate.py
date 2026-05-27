@@ -71,6 +71,13 @@ def evaluate(data_name, prompt_type, samples: list=None, file_path: str=None, ma
     mean_score = list(np.round(col_means * 100, decimals=1))
 
     mean_mean_score = np.mean(mean_score)
+
+    # Pass@k: for each problem, 1 if ANY of its k sampled responses is correct.
+    # max_len equals the number of samples per problem (n_sampling, e.g. 16).
+    num_sampling = max_len
+    pass_at_k = float(np.mean([1.0 if any(s) else 0.0 for s in score_mat]) * 100)
+    pass_at_k = round(pass_at_k, 1)
+
     print(f"mean_score: {mean_score}")
     result_json = {
         "num_samples": len(samples),
@@ -80,6 +87,11 @@ def evaluate(data_name, prompt_type, samples: list=None, file_path: str=None, ma
         "acc": mean_score[0],
         "all_acc": mean_score,
         "mean_acc": mean_mean_score,
+        # Avg@k = mean accuracy over all k samples and problems (== mean_acc).
+        "avg_acc": round(float(mean_mean_score), 1),
+        # Pass@k = fraction of problems solved by at least one of the k samples.
+        "pass_acc": pass_at_k,
+        "num_sampling": num_sampling,
     }
 
     # each type score
