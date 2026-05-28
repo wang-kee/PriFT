@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument("--shuffle", action="store_true")
     parser.add_argument("--use_vllm", action="store_true")
     parser.add_argument("--use_safetensors", action="store_true")
+    parser.add_argument("--tokenizer_mode", default="auto", type=str)
     parser.add_argument("--num_shots", type=int, default=0)
     parser.add_argument(
         "--apply_chat_template",
@@ -95,19 +96,22 @@ def worker_process(rank, world_size, args, data_name, examples_chunk):
             model=args.model_name_or_path,
             tensor_parallel_size=1,
             pipeline_parallel_size=1,
+            tokenizer_mode=args.tokenizer_mode,
             trust_remote_code=True,
             # max_model_len=8192,
         )
         tokenizer = None
         if args.apply_chat_template:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.model_name_or_path, trust_remote_code=True
+                args.model_name_or_path,
+                use_fast=(args.tokenizer_mode != "slow"),
+                trust_remote_code=True,
             )
     else:
         llm, tokenizer = load_hf_lm_and_tokenizer(
             model_name_or_path=args.model_name_or_path,
             load_in_half=True,
-            use_fast_tokenizer=True,
+            use_fast_tokenizer=(args.tokenizer_mode != "slow"),
             use_safetensors=args.use_safetensors,
         )
 

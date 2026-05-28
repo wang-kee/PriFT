@@ -46,26 +46,26 @@ The five evaluation benchmarks (`math_oai`, `minerva_math`, `olympiadbench`,
 
 ## 3. Training (PriFT-prob / PriFT-mass)
 
-`scripts/train.sh MODEL METHOD [NPROC] [MICRO_BSZ] [REF_MICRO_BSZ]`
+`scripts/train.sh MODEL METHOD [NPROC] [MICRO_BSZ] [REFERENCE_MODEL]`
 
 ```bash
 # Qwen2.5-Math-1.5B
-bash scripts/train.sh Qwen/Qwen2.5-Math-1.5B prift_prob 4 4 2
-bash scripts/train.sh Qwen/Qwen2.5-Math-1.5B prift_mass 4 4 2
+bash scripts/train.sh Qwen/Qwen2.5-Math-1.5B prift_prob 4 4
+bash scripts/train.sh Qwen/Qwen2.5-Math-1.5B prift_mass 4 4
 
 # Qwen2.5-Math-7B
-bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_prob 4 2 1
-bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_mass 4 2 1
+bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_prob 4 4
+bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_mass 4 4
 
 # Qwen3-8B-Base
-bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_prob 4 2 1
-bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_mass 4 2 1
+bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_prob 4 4
+bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_mass 4 4
 ```
 
 Baselines for comparison use the same script with `METHOD=sft` or `METHOD=dft`
 (no reference model is loaded for those). Key settings (paper §5.1): 100k
 NuminaMath-CoT, 1 epoch, `train_batch_size=256`, `max_length=2048`, `lr=5e-5`,
-bf16, `mass_threshold=0.5`. Reduce `MICRO_BSZ` / `REF_MICRO_BSZ` if you hit OOM;
+bf16, `mass_threshold=0.5`. Reduce `MICRO_BSZ` if you hit OOM;
 for very large vocabularies you can also set `loss.mass_vocab_chunk` to chunk the
 PriFT-mass softmax.
 
@@ -82,6 +82,7 @@ bash scripts/eval_math.sh \
   --prompt-type qwen-boxed \
   --n-sampling 16 \
   --temperature 1 \
+  --tokenizer-mode slow \
   --cuda-visible-devices 0,1,2,3
 ```
 

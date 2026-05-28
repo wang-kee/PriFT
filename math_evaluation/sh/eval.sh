@@ -5,6 +5,7 @@ MODEL_NAME_OR_PATH=$2
 OUTPUT_DIR=$3
 n_sampling=$4
 temperature=$5
+TOKENIZER_MODE=${TOKENIZER_MODE:-slow}
 
 SPLIT="test"
 NUM_TEST_SAMPLE=-1
@@ -23,6 +24,7 @@ python3 -u math_eval.py \
     --seed 0 \
     --temperature ${temperature} \
     --n_sampling ${n_sampling} \
+    --tokenizer_mode ${TOKENIZER_MODE} \
     --top_p 1 \
     --start 0 \
     --end -1 \
@@ -105,6 +107,7 @@ python3 -u math_eval.py \
     --seed 0 \
     --temperature ${temperature} \
     --n_sampling ${n_sampling} \
+    --tokenizer_mode ${TOKENIZER_MODE} \
     --top_p 1 \
     --start 0 \
     --end -1 \

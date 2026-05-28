@@ -9,6 +9,7 @@
 #     [--prompt-type qwen-boxed] \
 #     [--n-sampling 16] \
 #     [--temperature 1] \
+#     [--tokenizer-mode slow] \
 #     [--cuda-visible-devices 0,1,2,3]
 #
 # Backward-compatible positional usage is also supported:
@@ -36,6 +37,7 @@ OUTPUT_DIR=""
 PROMPT_TYPE="qwen-boxed"
 N_SAMPLING="16"
 TEMPERATURE="1"
+TOKENIZER_MODE="slow"
 CUDA_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 if [[ $# -gt 0 && "$1" == --* ]]; then
@@ -51,6 +53,8 @@ if [[ $# -gt 0 && "$1" == --* ]]; then
                 N_SAMPLING="$2"; shift 2 ;;
             --temperature)
                 TEMPERATURE="$2"; shift 2 ;;
+            --tokenizer-mode)
+                TOKENIZER_MODE="$2"; shift 2 ;;
             --cuda-visible-devices|--gpus)
                 CUDA_DEVICES="$2"; shift 2 ;;
             *)
@@ -84,6 +88,7 @@ python3 -u math_eval.py \
     --seed 0 \
     --temperature "${TEMPERATURE}" \
     --n_sampling "${N_SAMPLING}" \
+    --tokenizer_mode "${TOKENIZER_MODE}" \
     --top_p 1 \
     --start 0 \
     --end -1 \

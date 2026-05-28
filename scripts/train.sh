@@ -2,19 +2,18 @@
 # Train a math-reasoning SFT model with a selectable token-weighting method.
 #
 # Usage:
-#   bash scripts/train.sh MODEL METHOD [NPROC] [MICRO_BSZ] [REF_MICRO_BSZ] [REFERENCE_MODEL]
+#   bash scripts/train.sh MODEL METHOD [NPROC] [MICRO_BSZ] [REFERENCE_MODEL]
 #
 #   MODEL          HF id or local path, e.g. Qwen/Qwen2.5-Math-1.5B
 #   METHOD         sft | dft | prift_prob | prift_mass
 #   NPROC          GPUs per node (default 4)
 #   MICRO_BSZ      online micro batch size per GPU (default 4)
-#   REF_MICRO_BSZ  reference forward micro batch size (default 1; prift_* only)
 #   REFERENCE_MODEL optional frozen reference model path/id (default MODEL)
 #
 # Examples:
 #   bash scripts/train.sh Qwen/Qwen2.5-Math-1.5B prift_mass 4
-#   bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_prob 4 2 1
-#   bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_mass 4 2 1
+#   bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_prob 4 4
+#   bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_mass 4 4
 set -ex
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,8 +23,7 @@ MODEL=${1:?"MODEL required, e.g. Qwen/Qwen2.5-Math-1.5B"}
 METHOD=${2:?"METHOD required: sft|dft|prift_prob|prift_mass"}
 NPROC=${3:-4}
 MICRO_BSZ=${4:-4}
-REF_MICRO_BSZ=${5:-1}
-REFERENCE_MODEL=${6:-${REFERENCE_MODEL:-${MODEL}}}
+REFERENCE_MODEL=${5:-${REFERENCE_MODEL:-${MODEL}}}
 MASS_THRESHOLD=${PRIFT_MASS_THRESHOLD:-0.5}
 
 SHORT=$(basename "${MODEL}")
@@ -51,7 +49,6 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     loss.method="${METHOD}" \
     loss.reference_model_path="${REFERENCE_MODEL}" \
     loss.mass_threshold="${MASS_THRESHOLD}" \
-    loss.reference_micro_batch_size="${REF_MICRO_BSZ}" \
     trainer.default_local_dir="${SAVE_PATH}" \
     trainer.project_name="${PROJECT_NAME}" \
     trainer.experiment_name="${EXPERIMENT_NAME}-$(date +%Y%m%d-%H%M%S)" \

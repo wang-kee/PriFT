@@ -48,7 +48,6 @@ loss:
   method: dft                 # {sft, dft, prift_prob, prift_mass}
   reference_model_path: null  # defaults to model.partial_pretrain when null
   mass_threshold: 0.5         # selection threshold for prift_mass
-  reference_micro_batch_size: null  # optional micro-batching for the reference forward
 ```
 
 All original DFT codepaths remain in the repository. PriFT adds new loss modes on
