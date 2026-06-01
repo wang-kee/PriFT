@@ -4,40 +4,31 @@
 
 </div>
 
+This is the official repository for "PriFT: Prior-Support Guided Supervised Fine-Tuning" by Ke Wang*, Shuangqi Li*, Mathieu Salzmann, and Pascal Frossard.
+
 PriFT is a token-reweighted supervised fine-tuning framework that derives token
 weights from a **frozen pretrained reference model** instead of the online model
 being optimized. The pretrained reference gives a *prior-support* signal that is
-decoupled from the optimization trajectory, avoiding the self-reinforcing bias of
-online reweighting methods such as DFT.
+decoupled from the optimization trajectory.
 
-This repository is a fork of **DFT**
-([On the Generalization of SFT](https://github.com/yongliang-wu/DFT)), which is in
-turn built on [verl](https://github.com/volcengine/verl) for training and
-[Qwen2.5-Math](https://github.com/QwenLM/Qwen2.5-Math) for evaluation. We keep the
-original SFT and DFT training paths fully runnable and add the PriFT methods on top.
+This repository is based on [DFT](https://github.com/yongliang-wu/DFT). 
 
 ## Methods
 
 The training loss is selected through the `loss.method` config field:
 
-| `loss.method` | Per-token weight `m_t` | Source |
+| `loss.method` | Per-token weight | Source |
 |---------------|------------------------|--------|
 | `sft`         | `1`                    | —      |
 | `dft`         | `sg(p_online(y_t))`    | online model |
 | `prift_prob`  | `p_ref(y_t)`           | frozen pretrained reference |
-| `prift_mass`  | `1[ u_t >= τ ]`        | frozen pretrained reference |
+| `prift_mass`  | `1[ u_t >= 0.5 ]`        | frozen pretrained reference |
 
 where, under the frozen reference distribution `p_ref(· | x, y_<t)`,
 
 ```
-lower_mass_t = sum_{v : p_ref(v) < p_ref(y_t)} p_ref(v)
-u_t = lower_mass_t + p_ref(y_t)
+u_t = sum_{v : p_ref(v) <= p_ref(y_t)} p_ref(v)
 ```
-
-and `τ = loss.mass_threshold` (default `0.5`).
-
-The reference model is run **online** on every training batch (eval-only, `no_grad`,
-detached, never optimized); PriFT does **not** precompute weights offline.
 
 ## Configuration
 
@@ -47,38 +38,92 @@ New fields in [`verl/trainer/config/sft_trainer.yaml`](verl/verl/trainer/config/
 loss:
   method: dft                 # {sft, dft, prift_prob, prift_mass}
   reference_model_path: null  # defaults to model.partial_pretrain when null
-  mass_threshold: 0.5         # selection threshold for prift_mass
 ```
 
-All original DFT codepaths remain in the repository. PriFT adds new loss modes on
-top of the original SFT/DFT trainer instead of replacing the upstream codebase.
-
-## Installation
+## Environments
 
 ```bash
-conda create -n prift python=3.10 -y
-conda activate prift
-cd verl
-bash scripts/install_vllm_sglang_mcore.sh
-pip install --no-deps -e .
+cd /mnt/lts4/scratch/home/kewang/sft/PriFT-SFT
+bash envs/install_prift_envs.sh
 ```
 
-## Quick start
+This creates the three pinned reproduction environments:
 
-See [`README_REPRODUCE.md`](README_REPRODUCE.md) for exact, end-to-end commands to
-reproduce the mathematical-reasoning results on `Qwen2.5-Math-1.5B`,
-`Qwen2.5-Math-7B`, and `Qwen3-8B-Base`.
+- `prift-train-qwen` (training env, as suggested by [DFT repo](https://github.com/yongliang-wu/DFT/blob/master/verl/scripts/install_vllm_sglang_mcore.sh))
+- `prift-eval-qwen25` (eval env, as suggested by [Qwen2.5-math repo](https://github.com/QwenLM/Qwen2.5-Math))
+- `prift-eval-qwen3` (eval env, as suggested by [Qwen3 repo](https://github.com/QwenLM/Qwen3))
+
+Training uses `verl`. Please use `prift-eval-qwen25` for evaluating Qwen2.5 models and `prift-eval-qwen3` for evaluating Qwen3 models.
+
+## Getting started
+
+### Step1: Prepare data:
+
+```bash
+conda activate prift-train-qwen
+bash scripts/prepare_data.sh 100000
+```
+
+This generates:
+
+- `verl/data/numina_cot/train.parquet`
+- `verl/data/math500/test.parquet`
+
+### Step2: Launch training:
+
+Please use the `prift-train-qwen` environment for training. The `METHOD` argument selects the token weighting rule:
+
+- `sft`: standard supervised fine-tuning
+- `dft`: online-model probability weighting
+- `prift_prob`: pretrained-reference probability weighting
+- `prift_mass`: pretrained-reference cumulative-mass thresholding
+
+```bash
+conda activate prift-train-qwen
+
+NPROC=4
+MICRO_BSZ=4
+MODEL=Qwen/Qwen2.5-Math-7B
+METHOD=prift_prob
+REFERENCE_MODEL=Qwen/Qwen2.5-Math-7B
+
+bash scripts/train.sh $MODEL $METHOD $NPROC $MICRO_BSZ $REFERENCE_MODEL
+```
+
+Checkpoints are written under `verl/checkpoints/numina-cot-${METHOD}-$(basename ${MODEL})`.
+
+### Step3: Evaluation:
+
+Please use `prift-eval-qwen25` for `Qwen2.5` models and `prift-eval-qwen3` for `Qwen3-8B-Base`. The evaluation script resolves the latest `global_step_*` checkpoint automatically and writes `summary_metrics.json` to the output directory.
+
+```bash
+conda activate prift-eval-qwen25
+
+PROMPT_TYPE="qwen-boxed"
+CUDA_VISIBLE_DEVICES=0
+N_SAMPLING=16
+TEMPERATURE=1
+MODEL_NAME_OR_PATH=verl/checkpoints/numina-cot-prift_prob-Qwen2.5-Math-7B
+OUTPUT_DIR=outputs/prift_prob-Qwen2.5-Math-7B
+
+bash scripts/eval_math.sh \
+  --model $MODEL_NAME_OR_PATH \
+  --output-dir $OUTPUT_DIR \
+  --prompt-type $PROMPT_TYPE \
+  --n-sampling $N_SAMPLING \
+  --temperature $TEMPERATURE \
+  --cuda-visible-devices $CUDA_VISIBLE_DEVICES
+```
+
+
+We also provide wrapper scripts to reproduce the PriFT runs used in the paper. By default these wrappers run `prift_prob` and `prift_mass`:
+
+```bash
+bash scripts/reproduce_qwen25_math_1p5b.sh 4
+bash scripts/reproduce_qwen25_math_7b.sh 4
+bash scripts/reproduce_qwen3_8b_base.sh 4
+```
 
 ## Acknowledgements
 
-This codebase builds directly on DFT and verl. Please also cite the DFT paper if
-you use this code:
-
-```latex
-@article{wu2025generalization,
-  title={On the Generalization of SFT: A Reinforcement Learning Perspective with Reward Rectification},
-  author={Wu, Yongliang and Zhou, Yizhou and Ziheng, Zhou and Peng, Yingzhe and Ye, Xinyu and Hu, Xinting and Zhu, Wenbo and Qi, Lu and Yang, Ming-Hsuan and Yang, Xu},
-  journal={arXiv preprint arXiv:2508.05629},
-  year={2025}
-}
-```
+This codebase builds directly on DFT. We thank the authors for providing the repo. 

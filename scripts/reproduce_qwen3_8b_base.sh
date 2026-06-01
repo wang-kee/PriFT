@@ -1,22 +1,38 @@
-#!/bin/bash
-set -ex
+#!/usr/bin/env bash
+set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NPROC=${1:-4}
+cd "$(cd "$(dirname "$0")/.." && pwd)"
+
 MODEL="Qwen/Qwen3-8B-Base"
-MICRO_BSZ=4
-PROMPT_TYPE="qwen-boxed"
+NPROC="${NPROC:-4}"
+MICRO_BSZ="${MICRO_BSZ:-4}"
+PROMPT_TYPE="${PROMPT_TYPE:-qwen-boxed}"
+NSAMP="${NSAMP:-16}"
+TEMPERATURE="${TEMPERATURE:-1}"
+EVAL_CUDA_DEVICES="${EVAL_CUDA_DEVICES:-0}"
 
-for METHOD in prift_prob prift_mass; do
-  SHORT=$(basename "${MODEL}")
-  CKPT_ROOT="${REPO_ROOT}/verl/checkpoints/numina-cot-${METHOD}-${SHORT}"
-  OUTPUT_DIR="${REPO_ROOT}/outputs/${METHOD}-${SHORT}"
+if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+  NPROC="$1"
+  shift
+fi
 
-  bash "${REPO_ROOT}/scripts/train.sh" "${MODEL}" "${METHOD}" "${NPROC}" "${MICRO_BSZ}"
-  bash "${REPO_ROOT}/scripts/eval_math.sh" \
-    --model "${CKPT_ROOT}" \
-    --output-dir "${OUTPUT_DIR}" \
-    --prompt-type "${PROMPT_TYPE}" \
-    --n-sampling 16 \
-    --temperature 1
+if [[ $# -gt 0 ]]; then
+  METHODS=("$@")
+else
+  METHODS=(prift_prob prift_mass)
+fi
+
+SHORT=$(basename "$MODEL")
+for METHOD in "${METHODS[@]}"; do
+  conda run --no-capture-output -n prift-train-qwen \
+    bash scripts/train.sh "$MODEL" "$METHOD" "$NPROC" "$MICRO_BSZ"
+
+  conda run --no-capture-output -n prift-eval-qwen3 \
+    bash scripts/eval_math.sh \
+    --model "verl/checkpoints/numina-cot-${METHOD}-${SHORT}" \
+    --output-dir "outputs/${METHOD}-${SHORT}" \
+    --prompt-type "$PROMPT_TYPE" \
+    --n-sampling "$NSAMP" \
+    --temperature "$TEMPERATURE" \
+    --cuda-visible-devices "$EVAL_CUDA_DEVICES"
 done

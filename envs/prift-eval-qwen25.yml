@@ -1,0 +1,29 @@
+name: prift-eval-qwen25
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - tqdm==4.67.3
+      - datasets==2.20.0
+      - huggingface-hub==0.36.2
+      - numpy==1.26.4
+      - python-dateutil==2.9.0.post0
+      - sympy==1.14.0
+      - antlr4-python3-runtime==4.11.1
+      - word2number==1.1
+      - Pebble==5.2.0
+      - timeout-decorator==0.5.0
+      - torch==2.3.0
+      - vllm==0.5.1
+      - transformers==4.42.3
+      - tokenizers==0.19.1
+      - sentencepiece==0.2.1
+      - tiktoken==0.12.0
+      - ray==2.55.1
+      - pandas==2.3.3
+      - pyarrow==24.0.0
+      - nvidia-nvjitlink-cu12==12.1.105
+      - ../math_evaluation/latex2sympy

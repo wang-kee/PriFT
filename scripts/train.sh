@@ -1,5 +1,6 @@
 #!/bin/bash
 # Train a math-reasoning SFT model with a selectable token-weighting method.
+# Expected runtime env: `prift-train-qwen`.
 #
 # Usage:
 #   bash scripts/train.sh MODEL METHOD [NPROC] [MICRO_BSZ] [REFERENCE_MODEL]
@@ -15,6 +16,8 @@
 #   bash scripts/train.sh Qwen/Qwen2.5-Math-7B   prift_prob 4 4
 #   bash scripts/train.sh Qwen/Qwen3-8B-Base     prift_mass 4 4
 set -ex
+export PYTHONNOUSERSITE=1
+
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}/verl"
