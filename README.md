@@ -37,8 +37,9 @@ New fields in [`verl/trainer/config/sft_trainer.yaml`](verl/verl/trainer/config/
 ```yaml
 loss:
   method: dft                 # {sft, dft, prift_prob, prift_mass}
-  reference_model_path: null  # defaults to model.partial_pretrain when null
+  reference_model_path: null  # defaults to model.partial_pretrain when null (the pretrained model in our paper)
 ```
+(No need to manually configure them if you use our scripts below)
 
 ## Environments
 
