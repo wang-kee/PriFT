@@ -43,15 +43,15 @@ loss:
 ## Environments
 
 ```bash
-cd /mnt/lts4/scratch/home/kewang/sft/PriFT-SFT
+cd Path-to-Project
 bash envs/install_prift_envs.sh
 ```
 
 This creates the three pinned reproduction environments:
 
-- `prift-train-qwen` (training env, as suggested by [DFT repo](https://github.com/yongliang-wu/DFT/blob/master/verl/scripts/install_vllm_sglang_mcore.sh))
-- `prift-eval-qwen25` (eval env, as suggested by [Qwen2.5-math repo](https://github.com/QwenLM/Qwen2.5-Math))
-- `prift-eval-qwen3` (eval env, as suggested by [Qwen3 repo](https://github.com/QwenLM/Qwen3))
+- `prift-train-qwen` (training env, based on suggested setup from [DFT repo](https://github.com/yongliang-wu/DFT/blob/master/verl/scripts/install_vllm_sglang_mcore.sh))
+- `prift-eval-qwen25` (eval env, based on suggested setup from [Qwen2.5-math repo](https://github.com/QwenLM/Qwen2.5-Math))
+- `prift-eval-qwen3` (eval env, based on suggested setup from [Qwen3 repo](https://github.com/QwenLM/Qwen3))
 
 Training uses `verl`. Please use `prift-eval-qwen25` for evaluating Qwen2.5 models and `prift-eval-qwen3` for evaluating Qwen3 models.
 
@@ -127,3 +127,14 @@ bash scripts/reproduce_qwen3_8b_base.sh 4
 ## Acknowledgements
 
 This codebase builds directly on DFT. We thank the authors for providing the repo. 
+
+## Citation
+
+```bibtex
+@article{wang2026prift,
+  title={PriFT: Prior-Support Guided Supervised Fine-Tuning},
+  author={Wang, Ke and Li, Shuangqi and Salzmann, Mathieu and Frossard, Pascal},
+  journal={arXiv preprint arXiv:2606.09396},
+  year={2026}
+}
+```
