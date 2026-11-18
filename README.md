@@ -1,6 +1,6 @@
 <div align="center">
 
-# PriFT: Guiding Supervised Fine-Tuning with Pretrained Priors
+## PriFT: Guiding Supervised Fine-Tuning with Pretrained Priors
 
 </div>
 
