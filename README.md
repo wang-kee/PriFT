@@ -1,17 +1,18 @@
 <div align="center">
 
-# PriFT: Prior-Support Guided Supervised Fine-Tuning
+# PriFT: Guiding Supervised Fine-Tuning with Pretrained Priors
 
 </div>
 
-This is the official repository for "PriFT: Prior-Support Guided Supervised Fine-Tuning" by Ke Wang*, Shuangqi Li*, Mathieu Salzmann, and Pascal Frossard.
+This is the official repository for "[Guiding Supervised Fine-Tuning with Pretrained Priors](https://arxiv.org/abs/2606.09396)" (**NeurIPS 2026**), by Ke Wang*, Shuangqi Li*, Mathieu Salzmann, and Pascal Frossard.
 
-PriFT is a token-reweighted supervised fine-tuning framework that derives token
-weights from a **frozen pretrained reference model** instead of the online model
-being optimized. The pretrained reference gives a *prior-support* signal that is
-decoupled from the optimization trajectory.
+PriFT improves supervised fine-tuning (SFT) generalization by leveraging the pretrained model's prior knowledge to guide adaptation. Specifically, PriFT reweights training tokens based on their support under a frozen pretrained reference model, rather than the online model being optimized. This provides a prior-support signal that is decoupled from the optimization trajectory, helping prevent excessive adaptation to poorly supported targets.
 
-This repository is based on [DFT](https://github.com/yongliang-wu/DFT). 
+This repository is based on [DFT](https://github.com/yongliang-wu/DFT); the paper was formerly titled "PriFT: Prior-Support Guided Supervised Fine-Tuning".
+
+<p align="center">
+  <img src="prift_overview.png" width="100%">
+</p>
 
 ## Methods
 
