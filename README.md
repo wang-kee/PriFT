@@ -4,7 +4,7 @@
 
 </div>
 
-This is the official repository for "[Guiding Supervised Fine-Tuning with Pretrained Priors](https://arxiv.org/abs/2606.09396)" (**NeurIPS 2026**), by Ke Wang*, Shuangqi Li*, Mathieu Salzmann, and Pascal Frossard.
+This is the official repository for "[PriFT: Guiding Supervised Fine-Tuning with Pretrained Priors](https://arxiv.org/abs/2606.09396)" (**NeurIPS 2026**), by Ke Wang*, Shuangqi Li*, Mathieu Salzmann, and Pascal Frossard.
 
 PriFT improves supervised fine-tuning (SFT) generalization by leveraging the pretrained model's prior knowledge to guide adaptation. Specifically, PriFT reweights training tokens based on their support under a frozen pretrained reference model, rather than the online model being optimized. This provides a prior-support signal that is decoupled from the optimization trajectory, helping prevent excessive adaptation to poorly supported targets.
 
